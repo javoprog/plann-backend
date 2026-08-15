@@ -5,6 +5,7 @@ export interface AuthenticatedUser {
   email: string;
   name: string;
   theme: string;
+  language: string;
   xp: number;
   level: number;
   globalStreak: number;

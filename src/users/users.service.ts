@@ -9,6 +9,7 @@ import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateLanguageDto } from './dto/update-language.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { publicProfileSelect, withXpProgress } from './user-profile';
@@ -82,6 +83,15 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { theme: dto.theme },
+      select: publicProfileSelect,
+    });
+    return withXpProgress(user);
+  }
+
+  async updateLanguage(userId: string, dto: UpdateLanguageDto) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { language: dto.language },
       select: publicProfileSelect,
     });
     return withXpProgress(user);

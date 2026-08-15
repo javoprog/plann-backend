@@ -5,6 +5,7 @@ export const publicProfileSelect = {
   name: true,
   email: true,
   theme: true,
+  language: true,
   xp: true,
   level: true,
   globalStreak: true,

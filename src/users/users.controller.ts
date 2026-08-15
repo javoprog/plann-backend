@@ -4,6 +4,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { UpdateLanguageDto } from './dto/update-language.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
 import { UsersService } from './users.service';
@@ -42,5 +43,13 @@ export class UsersController {
     @Body() dto: UpdateThemeDto,
   ) {
     return this.usersService.updateTheme(user.id, dto);
+  }
+
+  @Patch('language')
+  updateLanguage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateLanguageDto,
+  ) {
+    return this.usersService.updateLanguage(user.id, dto);
   }
 }

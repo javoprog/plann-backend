@@ -28,6 +28,7 @@ describe('UsersService', () => {
     name: 'Alex Morgan',
     email: 'alex@example.com',
     theme: 'system',
+    language: 'en',
     xp: 0,
     level: 1,
     globalStreak: 0,
@@ -52,7 +53,7 @@ describe('UsersService', () => {
     mockHashCalls.length = 0;
   });
 
-  it('returns the public user profile including theme', async () => {
+  it('returns the public user profile including user settings', async () => {
     mockFindUnique.mockResolvedValue(user);
 
     await expect(service.findProfile(user.id)).resolves.toEqual({
@@ -147,6 +148,18 @@ describe('UsersService', () => {
     ).resolves.toEqual({ ...darkUser, xpToNextLevel: 100 });
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { theme: 'dark' } }),
+    );
+  });
+
+  it('stores a valid language and returns the updated public profile', async () => {
+    const russianUser = { ...user, language: 'ru' };
+    mockUpdate.mockResolvedValue(russianUser);
+
+    await expect(
+      service.updateLanguage(user.id, { language: 'ru' }),
+    ).resolves.toEqual({ ...russianUser, xpToNextLevel: 100 });
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { language: 'ru' } }),
     );
   });
 });
