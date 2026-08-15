@@ -56,7 +56,7 @@ export class GoalsService {
         description: dto.description?.trim(),
         deadline: dto.deadline ? new Date(dto.deadline) : undefined,
         status: dto.status ?? GoalStatus.IN_PROGRESS,
-        categoryId: dto.categoryId,
+        categoryId: dto.categoryId ?? undefined,
         userId,
       },
       include: { category: true },
@@ -76,7 +76,12 @@ export class GoalsService {
       data: {
         title: dto.title?.trim(),
         description: dto.description?.trim(),
-        deadline: dto.deadline ? new Date(dto.deadline) : undefined,
+        deadline:
+          dto.deadline === undefined
+            ? undefined
+            : dto.deadline === null
+              ? null
+              : new Date(dto.deadline),
         status: dto.status,
         categoryId: dto.categoryId,
       },

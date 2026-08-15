@@ -26,7 +26,7 @@ export class CreateGoalDto {
   @ApiPropertyOptional({ example: '2026-12-01T00:00:00.000Z' })
   @IsOptional()
   @IsDateString()
-  deadline?: string;
+  deadline?: string | null;
 
   @ApiPropertyOptional({ enum: GoalStatus, default: GoalStatus.IN_PROGRESS })
   @IsOptional()
@@ -36,5 +36,5 @@ export class CreateGoalDto {
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID()
-  categoryId?: string;
+  categoryId?: string | null;
 }

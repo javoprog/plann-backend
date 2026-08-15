@@ -39,7 +39,7 @@ export class TasksService {
         isCompleted: dto.isCompleted ?? false,
         priority: dto.priority ?? Priority.MEDIUM,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        goalId: dto.goalId,
+        goalId: dto.goalId ?? undefined,
         userId,
       },
       include: { goal: { include: { category: true } } },
@@ -59,7 +59,12 @@ export class TasksService {
         description: dto.description?.trim(),
         isCompleted: dto.isCompleted,
         priority: dto.priority,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        dueDate:
+          dto.dueDate === undefined
+            ? undefined
+            : dto.dueDate === null
+              ? null
+              : new Date(dto.dueDate),
         goalId: dto.goalId,
       },
       include: { goal: { include: { category: true } } },

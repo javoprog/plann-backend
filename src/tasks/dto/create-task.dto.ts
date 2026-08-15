@@ -37,10 +37,10 @@ export class CreateTaskDto {
   @ApiPropertyOptional({ example: '2026-09-01T00:00:00.000Z' })
   @IsOptional()
   @IsDateString()
-  dueDate?: string;
+  dueDate?: string | null;
 
   @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
   @IsUUID()
-  goalId?: string;
+  goalId?: string | null;
 }
