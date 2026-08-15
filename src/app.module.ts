@@ -7,6 +7,9 @@ import { AuthModule } from './auth/auth.module';
 import { CategoriesModule } from './categories/categories.module';
 import { GoalsModule } from './goals/goals.module';
 import { TasksModule } from './tasks/tasks.module';
+import { HabitsModule } from './habits/habits.module';
+import { SubtasksModule } from './subtasks/subtasks.module';
+import { SearchModule } from './search/search.module';
 
 @Module({
   imports: [
@@ -16,6 +19,9 @@ import { TasksModule } from './tasks/tasks.module';
     CategoriesModule,
     GoalsModule,
     TasksModule,
+    HabitsModule,
+    SubtasksModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],

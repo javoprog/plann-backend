@@ -21,6 +21,12 @@ enum Priority {
   HIGH
 }
 
+enum HabitFrequency {
+  DAILY
+  WEEKDAYS
+  WEEKENDS
+}
+
 model User {
   id         String     @id @default(uuid())
   name       String
@@ -29,6 +35,7 @@ model User {
   categories Category[]
   goals      Goal[]
   tasks      Task[]
+  habits     Habit[]
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 }
@@ -41,6 +48,7 @@ model Category {
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   goals     Goal[]
+  habits    Habit[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -58,6 +66,7 @@ model Goal {
   userId      String
   user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   tasks       Task[]
+  habits      Habit[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -76,9 +85,54 @@ model Task {
   goal        Goal?     @relation(fields: [goalId], references: [id], onDelete: Cascade)
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subtasks    Subtask[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([userId])
   @@index([goalId])
+}
+
+model Habit {
+  id          String         @id @default(uuid())
+  title       String
+  description String?        @db.Text
+  frequency   HabitFrequency @default(DAILY)
+  goalId      String?
+  goal        Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  categoryId  String?
+  category    Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs        HabitLog[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([categoryId])
+}
+
+model HabitLog {
+  id        String   @id @default(uuid())
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  date      String
+  completed Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([habitId, date])
+  @@index([habitId])
+}
+
+model Subtask {
+  id          String   @id @default(uuid())
+  title       String
+  isCompleted Boolean  @default(false)
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([taskId])
 }

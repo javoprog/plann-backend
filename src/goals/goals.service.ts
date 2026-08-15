@@ -34,7 +34,10 @@ export class GoalsService {
       where: { id, userId },
       include: {
         category: true,
-        tasks: { orderBy: { createdAt: 'desc' } },
+        tasks: {
+          include: { subtasks: { orderBy: { createdAt: 'asc' } } },
+          orderBy: { createdAt: 'desc' },
+        },
       },
     });
 

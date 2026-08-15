@@ -18,7 +18,10 @@ export class TasksService {
         isCompleted: filters.isCompleted,
         priority: filters.priority,
       },
-      include: { goal: { include: { category: true } } },
+      include: {
+        goal: { include: { category: true } },
+        subtasks: { orderBy: { createdAt: 'asc' } },
+      },
       orderBy: [
         { isCompleted: 'asc' },
         { dueDate: 'asc' },
@@ -42,7 +45,10 @@ export class TasksService {
         goalId: dto.goalId ?? undefined,
         userId,
       },
-      include: { goal: { include: { category: true } } },
+      include: {
+        goal: { include: { category: true } },
+        subtasks: { orderBy: { createdAt: 'asc' } },
+      },
     });
   }
 
@@ -67,7 +73,10 @@ export class TasksService {
               : new Date(dto.dueDate),
         goalId: dto.goalId,
       },
-      include: { goal: { include: { category: true } } },
+      include: {
+        goal: { include: { category: true } },
+        subtasks: { orderBy: { createdAt: 'asc' } },
+      },
     });
   }
 

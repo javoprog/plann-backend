@@ -19,7 +19,7 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Plann API')
-    .setDescription('Personal planning API for goals and tasks')
+    .setDescription('Personal planning API for goals, tasks, and habits')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
