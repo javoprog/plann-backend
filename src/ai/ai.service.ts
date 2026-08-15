@@ -512,38 +512,48 @@ export class AiService {
 
   private async generateWithGemini(apiKey: string, goal: GoalPromptData) {
     const prompts = this.buildPrompts(goal);
-    const model =
-      this.config.get<string>('GEMINI_MODEL') ?? 'gemini-1.5-flash';
+    const model = this.config.get<string>('GEMINI_MODEL') ?? 'gemini-1.5-flash';
+    const models =
+      model === 'gemini-1.5-flash' ? [model, 'gemini-2.0-flash'] : [model];
+    const body = JSON.stringify({
+      systemInstruction: { parts: [{ text: prompts.system }] },
+      contents: [{ role: 'user', parts: [{ text: prompts.user }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: AI_PLAN_SCHEMA,
+      },
+    });
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-        {
+      for (const currentModel of models) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(currentModel)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
           },
-          body: JSON.stringify({
-            systemInstruction: { parts: [{ text: prompts.system }] },
-            contents: [{ role: 'user', parts: [{ text: prompts.user }] }],
-            generationConfig: {
-              responseMimeType: 'application/json',
-              responseJsonSchema: AI_PLAN_SCHEMA,
-            },
-          }),
+          body,
           signal: AbortSignal.timeout(30_000),
-        },
-      );
-      if (!response.ok) {
-        this.logger.error(
-          `Gemini request failed with status ${response.status}`,
-        );
-        throw new BadGatewayException('Gemini could not generate a plan');
+        });
+        if (!response.ok) {
+          const errorText = await response.text();
+          this.logger.error(
+            `Gemini request failed with status ${response.status}: ${errorText}`,
+          );
+          if (response.status === 404 && currentModel === 'gemini-1.5-flash') {
+            continue;
+          }
+          throw new BadGatewayException(
+            `Gemini request failed (${response.status}): ${errorText}`,
+          );
+        }
+        const payload = (await response.json()) as unknown;
+        const text = this.getGeminiText(payload);
+        if (!text) {
+          throw new BadGatewayException('Gemini returned an empty plan');
+        }
+        return parsePlan(text);
       }
-      const payload = (await response.json()) as unknown;
-      const text = this.getGeminiText(payload);
-      if (!text) throw new BadGatewayException('Gemini returned an empty plan');
-      return parsePlan(text);
+      throw new BadGatewayException('Gemini could not generate a plan');
     } catch (error) {
       if (error instanceof BadGatewayException) throw error;
       this.logger.error('Gemini request failed', error);
