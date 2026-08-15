@@ -6,21 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HabitFrequency, Priority } from '@prisma/client';
-import { GamificationService } from '../gamification/gamification.service';
+import { HabitFrequency, Prisma, Priority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-  AiPlanHabitDto,
-  AiPlanTaskDto,
-  ApplyAiPlanDto,
-} from './dto/apply-ai-plan.dto';
-import { BreakdownGoalDto } from './dto/breakdown-goal.dto';
 
 type SupportedLanguage = 'en' | 'ru' | 'uz';
 
 export interface AiGoalPlan {
-  tasks: AiPlanTaskDto[];
-  habits: AiPlanHabitDto[];
+  tasks: Array<{ title: string; priority: Priority }>;
+  habits: Array<{ title: string; frequency: HabitFrequency }>;
 }
 
 interface GoalPromptData {
@@ -73,6 +66,21 @@ const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
   uz: 'Uzbek',
 };
 
+const PLACEHOLDER_GOALS = new Set([
+  'test',
+  'testing',
+  'test goal',
+  'тест',
+  'тестовая цель',
+  'sinov',
+  'asdf',
+  'qwerty',
+  'йцукен',
+  'фыва',
+  'вфывф',
+  'lorem ipsum',
+]);
+
 function getSupportedLanguage(language: string): SupportedLanguage {
   return language === 'ru' || language === 'uz' ? language : 'en';
 }
@@ -114,14 +122,32 @@ function limitTitle(title: string) {
   return title.length <= 200 ? title : `${title.slice(0, 197).trimEnd()}...`;
 }
 
-export function buildFallbackPlan(
-  goal: GoalPromptData,
-  additionalContext?: string,
-): AiGoalPlan {
+export function hasInsufficientGoalData(
+  title: string,
+  description: string | null,
+) {
+  const combined = `${title} ${description ?? ''}`
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (combined.length < 6 || PLACEHOLDER_GOALS.has(combined)) return true;
+
+  const letters = combined.match(/\p{L}/gu) ?? [];
+  if (letters.length < 4) return true;
+
+  if (!combined.includes(' ') && combined.length <= 12) {
+    if (/^(.)\1+$/u.test(combined)) return true;
+    if (/^(.{2,3}).*\1$/u.test(combined)) return true;
+    if (!/[aeiouyаеиоуыэюяёoʻʼ']/iu.test(combined)) return true;
+  }
+
+  return false;
+}
+
+export function buildFallbackPlan(goal: GoalPromptData): AiGoalPlan {
   const language = getSupportedLanguage(goal.user.language);
   const category = normalizeCategory(goal.category?.name ?? null);
   const title = goal.title.trim();
-  const context = additionalContext?.trim();
 
   const categoryTask = {
     en: {
@@ -160,9 +186,7 @@ export function buildFallbackPlan(
         },
         { title: categoryTask, priority: Priority.HIGH },
         {
-          title: context
-            ? `Use this context in the next action: ${context}`
-            : `Review progress and remove one blocker for “${title}”`,
+          title: `Review progress and remove one blocker for “${title}”`,
           priority: Priority.MEDIUM,
         },
         {
@@ -197,9 +221,7 @@ export function buildFallbackPlan(
         },
         { title: categoryTask, priority: Priority.HIGH },
         {
-          title: context
-            ? `Учесть этот контекст в следующем действии: ${context}`
-            : `Проверить прогресс и устранить одно препятствие для цели «${title}»`,
+          title: `Проверить прогресс и устранить одно препятствие для цели «${title}»`,
           priority: Priority.MEDIUM,
         },
         {
@@ -234,9 +256,7 @@ export function buildFallbackPlan(
         },
         { title: categoryTask, priority: Priority.HIGH },
         {
-          title: context
-            ? `Keyingi qadamda ushbu kontekstni hisobga olish: ${context}`
-            : `“${title}” jarayonini tekshirib, bitta to‘siqni bartaraf etish`,
+          title: `“${title}” jarayonini tekshirib, bitta to‘siqni bartaraf etish`,
           priority: Priority.MEDIUM,
         },
         {
@@ -346,92 +366,90 @@ export class AiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    private readonly gamification: GamificationService,
   ) {}
 
-  async breakdownGoal(userId: string, dto: BreakdownGoalDto) {
+  async generateAiPlan(goalId: string, userId: string) {
     const goal = await this.prisma.goal.findFirst({
-      where: { id: dto.goalId, userId },
+      where: { id: goalId, userId },
       select: {
         title: true,
         description: true,
         deadline: true,
         category: { select: { name: true } },
         user: { select: { language: true } },
+        tasks: { select: { id: true }, take: 1 },
+        habits: { select: { id: true }, take: 1 },
       },
     });
     if (!goal) throw new NotFoundException('Goal not found');
+    if (goal.tasks.length > 0 || goal.habits.length > 0) {
+      throw new BadRequestException(
+        'AI plan generation is only available for empty goals',
+      );
+    }
+    if (hasInsufficientGoalData(goal.title, goal.description)) {
+      return {
+        status: 'INSUFFICIENT_DATA' as const,
+        message: 'Insufficient goal details',
+      };
+    }
 
     const openAiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
     const geminiKey = this.config.get<string>('GEMINI_API_KEY')?.trim();
-    if (openAiKey)
-      return this.generateWithOpenAi(openAiKey, goal, dto.additionalContext);
-    if (geminiKey)
-      return this.generateWithGemini(geminiKey, goal, dto.additionalContext);
-    return buildFallbackPlan(goal, dto.additionalContext);
+    const plan = openAiKey
+      ? await this.generateWithOpenAi(openAiKey, goal)
+      : geminiKey
+        ? await this.generateWithGemini(geminiKey, goal)
+        : buildFallbackPlan(goal);
+
+    return this.prisma.$transaction(
+      async (transaction) => {
+        const currentGoal = await transaction.goal.findFirst({
+          where: { id: goalId, userId },
+          select: {
+            id: true,
+            categoryId: true,
+            tasks: { select: { id: true }, take: 1 },
+            habits: { select: { id: true }, take: 1 },
+          },
+        });
+        if (!currentGoal) throw new NotFoundException('Goal not found');
+        if (currentGoal.tasks.length > 0 || currentGoal.habits.length > 0) {
+          throw new BadRequestException(
+            'AI plan generation is only available for empty goals',
+          );
+        }
+
+        const tasks = plan.tasks.map((task) => ({
+          title: task.title.trim(),
+          priority: task.priority,
+          goalId,
+          userId,
+        }));
+        const habits = plan.habits.map((habit) => ({
+          title: habit.title.trim(),
+          frequency: habit.frequency,
+          goalId,
+          categoryId: currentGoal.categoryId,
+          userId,
+        }));
+
+        const taskResult = await transaction.task.createMany({ data: tasks });
+        const habitResult = await transaction.habit.createMany({
+          data: habits,
+        });
+
+        return {
+          status: 'SUCCESS' as const,
+          createdTasksCount: taskResult.count,
+          createdHabitsCount: habitResult.count,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
 
-  async applyPlan(goalId: string, userId: string, dto: ApplyAiPlanDto) {
-    if (dto.tasks.length === 0 && dto.habits.length === 0) {
-      throw new BadRequestException('Select at least one task or habit');
-    }
-
-    return this.prisma.$transaction(async (transaction) => {
-      const goal = await transaction.goal.findFirst({
-        where: { id: goalId, userId },
-        select: { id: true, categoryId: true },
-      });
-      if (!goal) throw new NotFoundException('Goal not found');
-
-      const beforeGoals = await this.gamification.getGoalCompletionStates(
-        transaction,
-        [goalId],
-      );
-      const tasks = dto.tasks.map((task) => ({
-        title: task.title.trim(),
-        priority: task.priority,
-        goalId,
-        userId,
-      }));
-      const habits = dto.habits.map((habit) => ({
-        title: habit.title.trim(),
-        frequency: habit.frequency,
-        goalId,
-        categoryId: goal.categoryId,
-        userId,
-      }));
-
-      const [taskResult, habitResult] = await Promise.all([
-        tasks.length
-          ? transaction.task.createMany({ data: tasks })
-          : Promise.resolve({ count: 0 }),
-        habits.length
-          ? transaction.habit.createMany({ data: habits })
-          : Promise.resolve({ count: 0 }),
-      ]);
-      const afterGoals = await this.gamification.getGoalCompletionStates(
-        transaction,
-        [goalId],
-      );
-      const goalChange = this.gamification.getGoalTransitionSummary(
-        beforeGoals,
-        afterGoals,
-      );
-      await this.gamification.applyXpChange(
-        transaction,
-        userId,
-        goalChange.xpDelta,
-        goalChange.hasCompletion,
-      );
-
-      return {
-        createdTasks: taskResult.count,
-        createdHabits: habitResult.count,
-      };
-    });
-  }
-
-  private buildPrompts(goal: GoalPromptData, additionalContext?: string) {
+  private buildPrompts(goal: GoalPromptData) {
     const language = getSupportedLanguage(goal.user.language);
     const system = [
       'You are a concise personal-planning assistant.',
@@ -445,21 +463,14 @@ export class AiService {
       `Description: ${goal.description ?? 'Not provided'}`,
       `Category: ${goal.category?.name ?? 'Not provided'}`,
       `Deadline: ${goal.deadline?.toISOString().slice(0, 10) ?? 'Not provided'}`,
-      additionalContext?.trim()
-        ? `Additional context: ${additionalContext.trim()}`
-        : '',
     ]
       .filter(Boolean)
       .join('\n');
     return { system, user };
   }
 
-  private async generateWithOpenAi(
-    apiKey: string,
-    goal: GoalPromptData,
-    additionalContext?: string,
-  ) {
-    const prompts = this.buildPrompts(goal, additionalContext);
+  private async generateWithOpenAi(apiKey: string, goal: GoalPromptData) {
+    const prompts = this.buildPrompts(goal);
     try {
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
@@ -499,12 +510,8 @@ export class AiService {
     }
   }
 
-  private async generateWithGemini(
-    apiKey: string,
-    goal: GoalPromptData,
-    additionalContext?: string,
-  ) {
-    const prompts = this.buildPrompts(goal, additionalContext);
+  private async generateWithGemini(apiKey: string, goal: GoalPromptData) {
+    const prompts = this.buildPrompts(goal);
     const model =
       this.config.get<string>('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
     try {

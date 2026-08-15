@@ -1,23 +1,28 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AiService } from './ai.service';
-import { BreakdownGoalDto } from './dto/breakdown-goal.dto';
 
-@ApiTags('ai')
+@ApiTags('goals')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Controller('ai')
+@Controller('goals')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
-  @Post('breakdown-goal')
-  breakdownGoal(
+  @Post(':id/generate-ai-plan')
+  generateAiPlan(
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: BreakdownGoalDto,
   ) {
-    return this.aiService.breakdownGoal(user.id, dto);
+    return this.aiService.generateAiPlan(id, user.id);
   }
 }
