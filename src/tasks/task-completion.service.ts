@@ -19,25 +19,6 @@ export class TaskCompletionService {
     });
   }
 
-  async recalculateFromSubtasks(
-    transaction: Prisma.TransactionClient,
-    taskId: string,
-  ) {
-    const [totalSubtasks, incompleteSubtasks] = await Promise.all([
-      transaction.subtask.count({ where: { taskId } }),
-      transaction.subtask.count({
-        where: { taskId, isCompleted: false },
-      }),
-    ]);
-
-    if (totalSubtasks === 0) return;
-
-    await transaction.task.update({
-      where: { id: taskId },
-      data: { isCompleted: incompleteSubtasks === 0 },
-    });
-  }
-
   getTaskAggregate(transaction: Prisma.TransactionClient, taskId: string) {
     return transaction.task.findUniqueOrThrow({
       where: { id: taskId },

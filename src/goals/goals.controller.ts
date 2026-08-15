@@ -14,6 +14,8 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AiService } from '../ai/ai.service';
+import { ApplyAiPlanDto } from '../ai/dto/apply-ai-plan.dto';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { GoalFiltersDto } from './dto/goal-filters.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
@@ -24,7 +26,10 @@ import { GoalsService } from './goals.service';
 @UseGuards(JwtAuthGuard)
 @Controller('goals')
 export class GoalsController {
-  constructor(private readonly goalsService: GoalsService) {}
+  constructor(
+    private readonly goalsService: GoalsService,
+    private readonly aiService: AiService,
+  ) {}
 
   @Get()
   findAll(
@@ -54,6 +59,15 @@ export class GoalsController {
     @Body() dto: UpdateGoalDto,
   ) {
     return this.goalsService.update(id, user.id, dto);
+  }
+
+  @Post(':id/apply-ai-plan')
+  applyAiPlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ApplyAiPlanDto,
+  ) {
+    return this.aiService.applyPlan(id, user.id, dto);
   }
 
   @Delete(':id')
