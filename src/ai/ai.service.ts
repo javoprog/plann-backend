@@ -512,7 +512,8 @@ export class AiService {
 
   private async generateWithGemini(apiKey: string, goal: GoalPromptData) {
     const prompts = this.buildPrompts(goal);
-    const model = this.config.get<string>('GEMINI_MODEL') ?? 'gemini-1.5-flash';
+    const model =
+      this.config.get<string>('GEMINI_MODEL')?.trim() || 'gemini-2.5-flash';
     const models =
       model === 'gemini-1.5-flash' ? [model, 'gemini-2.0-flash'] : [model];
     const body = JSON.stringify({
