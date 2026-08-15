@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Priority } from '@prisma/client';
+import {
+  GamificationService,
+  getCompletionXp,
+  XP_REWARDS,
+} from '../gamification/gamification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { TaskCompletionService } from './task-completion.service';
@@ -11,6 +16,7 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly taskCompletion: TaskCompletionService,
+    private readonly gamification: GamificationService,
   ) {}
 
   findAll(userId: string, filters: TaskFiltersDto) {
@@ -35,24 +41,46 @@ export class TasksService {
   }
 
   async create(userId: string, dto: CreateTaskDto) {
-    if (dto.goalId) {
-      await this.ensureGoalOwnership(dto.goalId, userId);
-    }
+    return this.prisma.$transaction(async (transaction) => {
+      if (dto.goalId) {
+        const goal = await transaction.goal.findFirst({
+          where: { id: dto.goalId, userId },
+          select: { id: true },
+        });
+        if (!goal) throw new NotFoundException('Goal not found');
+      }
 
-    return this.prisma.task.create({
-      data: {
-        title: dto.title.trim(),
-        description: dto.description?.trim(),
-        isCompleted: dto.isCompleted ?? false,
-        priority: dto.priority ?? Priority.MEDIUM,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-        goalId: dto.goalId ?? undefined,
+      const beforeGoals = await this.gamification.getGoalCompletionStates(
+        transaction,
+        [dto.goalId],
+      );
+      const task = await transaction.task.create({
+        data: {
+          title: dto.title.trim(),
+          description: dto.description?.trim(),
+          isCompleted: dto.isCompleted ?? false,
+          priority: dto.priority ?? Priority.MEDIUM,
+          dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+          goalId: dto.goalId ?? undefined,
+          userId,
+        },
+      });
+      const afterGoals = await this.gamification.getGoalCompletionStates(
+        transaction,
+        [dto.goalId],
+      );
+      const goalChange = this.gamification.getGoalTransitionSummary(
+        beforeGoals,
+        afterGoals,
+      );
+      const taskXp = task.isCompleted ? XP_REWARDS.task : 0;
+      await this.gamification.applyXpChange(
+        transaction,
         userId,
-      },
-      include: {
-        goal: { include: { category: true } },
-        subtasks: { orderBy: { createdAt: 'asc' } },
-      },
+        taskXp + goalChange.xpDelta,
+        task.isCompleted || goalChange.hasCompletion,
+      );
+      return this.taskCompletion.getTaskAggregate(transaction, task.id);
     });
   }
 
@@ -60,11 +88,23 @@ export class TasksService {
     return this.prisma.$transaction(async (transaction) => {
       const task = await transaction.task.findFirst({
         where: { id, userId },
-        select: { id: true },
+        select: {
+          id: true,
+          goalId: true,
+          isCompleted: true,
+          subtasks: { select: { isCompleted: true } },
+        },
       });
       if (!task) {
         throw new NotFoundException('Task not found');
       }
+
+      const nextGoalId = dto.goalId === undefined ? task.goalId : dto.goalId;
+      const goalIds = [task.goalId, nextGoalId];
+      const beforeGoals = await this.gamification.getGoalCompletionStates(
+        transaction,
+        goalIds,
+      );
 
       if (dto.goalId) {
         const goal = await transaction.goal.findFirst({
@@ -101,33 +141,82 @@ export class TasksService {
         );
       }
 
-      return this.taskCompletion.getTaskAggregate(transaction, id);
+      const updatedTask = await this.taskCompletion.getTaskAggregate(
+        transaction,
+        id,
+      );
+      let xpDelta = getCompletionXp(
+        task.isCompleted,
+        updatedTask.isCompleted,
+        XP_REWARDS.task,
+      );
+      let hasCompletion = !task.isCompleted && updatedTask.isCompleted;
+      if (dto.isCompleted !== undefined) {
+        for (const subtask of task.subtasks) {
+          xpDelta += getCompletionXp(
+            subtask.isCompleted,
+            dto.isCompleted,
+            XP_REWARDS.subtask,
+          );
+          hasCompletion ||= !subtask.isCompleted && dto.isCompleted;
+        }
+      }
+      const afterGoals = await this.gamification.getGoalCompletionStates(
+        transaction,
+        goalIds,
+      );
+      const goalChange = this.gamification.getGoalTransitionSummary(
+        beforeGoals,
+        afterGoals,
+      );
+      await this.gamification.applyXpChange(
+        transaction,
+        userId,
+        xpDelta + goalChange.xpDelta,
+        hasCompletion || goalChange.hasCompletion,
+      );
+
+      return updatedTask;
     });
   }
 
   async remove(id: string, userId: string) {
-    await this.ensureTaskOwnership(id, userId);
-    await this.prisma.task.delete({ where: { id } });
-    return { message: 'Task deleted' };
-  }
+    return this.prisma.$transaction(async (transaction) => {
+      const task = await transaction.task.findFirst({
+        where: { id, userId },
+        select: {
+          id: true,
+          goalId: true,
+          isCompleted: true,
+          subtasks: { select: { isCompleted: true } },
+        },
+      });
+      if (!task) throw new NotFoundException('Task not found');
 
-  private async ensureTaskOwnership(id: string, userId: string) {
-    const task = await this.prisma.task.findFirst({
-      where: { id, userId },
-      select: { id: true },
+      const beforeGoals = await this.gamification.getGoalCompletionStates(
+        transaction,
+        [task.goalId],
+      );
+      await transaction.task.delete({ where: { id } });
+      const afterGoals = await this.gamification.getGoalCompletionStates(
+        transaction,
+        [task.goalId],
+      );
+      const goalChange = this.gamification.getGoalTransitionSummary(
+        beforeGoals,
+        afterGoals,
+      );
+      const removedXp =
+        (task.isCompleted ? XP_REWARDS.task : 0) +
+        task.subtasks.filter((subtask) => subtask.isCompleted).length *
+          XP_REWARDS.subtask;
+      await this.gamification.applyXpChange(
+        transaction,
+        userId,
+        goalChange.xpDelta - removedXp,
+        goalChange.hasCompletion,
+      );
+      return { message: 'Task deleted' };
     });
-    if (!task) {
-      throw new NotFoundException('Task not found');
-    }
-  }
-
-  private async ensureGoalOwnership(goalId: string, userId: string) {
-    const goal = await this.prisma.goal.findFirst({
-      where: { id: goalId, userId },
-      select: { id: true },
-    });
-    if (!goal) {
-      throw new NotFoundException('Goal not found');
-    }
   }
 }

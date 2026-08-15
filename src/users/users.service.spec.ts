@@ -28,6 +28,9 @@ describe('UsersService', () => {
     name: 'Alex Morgan',
     email: 'alex@example.com',
     theme: 'system',
+    xp: 0,
+    level: 1,
+    globalStreak: 0,
   };
   const mockFindFirst = jest.fn();
   const mockFindUnique = jest.fn();
@@ -52,7 +55,10 @@ describe('UsersService', () => {
   it('returns the public user profile including theme', async () => {
     mockFindUnique.mockResolvedValue(user);
 
-    await expect(service.findProfile(user.id)).resolves.toEqual(user);
+    await expect(service.findProfile(user.id)).resolves.toEqual({
+      ...user,
+      xpToNextLevel: 100,
+    });
   });
 
   it('rejects an email already owned by another user', async () => {
@@ -138,7 +144,7 @@ describe('UsersService', () => {
 
     await expect(
       service.updateTheme(user.id, { theme: 'dark' }),
-    ).resolves.toEqual(darkUser);
+    ).resolves.toEqual({ ...darkUser, xpToNextLevel: 100 });
     expect(mockUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { theme: 'dark' } }),
     );

@@ -11,11 +11,13 @@ import { HabitsModule } from './habits/habits.module';
 import { SubtasksModule } from './subtasks/subtasks.module';
 import { SearchModule } from './search/search.module';
 import { UsersModule } from './users/users.module';
+import { GamificationModule } from './gamification/gamification.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    GamificationModule,
     AuthModule,
     CategoriesModule,
     GoalsModule,

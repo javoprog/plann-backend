@@ -11,13 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
-
-const publicProfileSelect = {
-  id: true,
-  name: true,
-  email: true,
-  theme: true,
-} satisfies Prisma.UserSelect;
+import { publicProfileSelect, withXpProgress } from './user-profile';
 
 @Injectable()
 export class UsersService {
@@ -29,7 +23,7 @@ export class UsersService {
       select: publicProfileSelect,
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return withXpProgress(user);
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
@@ -43,11 +37,12 @@ export class UsersService {
     }
 
     try {
-      return await this.prisma.user.update({
+      const user = await this.prisma.user.update({
         where: { id: userId },
         data: { name: dto.name.trim(), email },
         select: publicProfileSelect,
       });
+      return withXpProgress(user);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -83,11 +78,12 @@ export class UsersService {
     return { message: 'Password updated' };
   }
 
-  updateTheme(userId: string, dto: UpdateThemeDto) {
-    return this.prisma.user.update({
+  async updateTheme(userId: string, dto: UpdateThemeDto) {
+    const user = await this.prisma.user.update({
       where: { id: userId },
       data: { theme: dto.theme },
       select: publicProfileSelect,
     });
+    return withXpProgress(user);
   }
 }

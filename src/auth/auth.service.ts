@@ -6,6 +6,11 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  publicProfileSelect,
+  type PublicProfile,
+  withXpProgress,
+} from '../users/user-profile';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
@@ -29,7 +34,7 @@ export class AuthService {
     const password = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({
       data: { name: dto.name.trim(), email, password },
-      select: { id: true, name: true, email: true, theme: true },
+      select: publicProfileSelect,
     });
 
     return this.createAuthResponse(user);
@@ -44,24 +49,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return this.createAuthResponse({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      theme: user.theme,
-    });
+    return this.createAuthResponse(user);
   }
 
-  private async createAuthResponse(user: {
-    id: string;
-    name: string;
-    email: string;
-    theme: string;
-  }) {
+  private async createAuthResponse(user: PublicProfile) {
     const token = await this.jwtService.signAsync({
       sub: user.id,
       email: user.email,
     });
-    return { token, user };
+    return { token, user: withXpProgress(user) };
   }
 }

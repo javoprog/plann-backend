@@ -1,5 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { GoalStatus } from '@prisma/client';
+import {
+  GamificationService,
+  XP_REWARDS,
+} from '../gamification/gamification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateGoalDto } from './dto/create-goal.dto';
 import { GoalFiltersDto } from './dto/goal-filters.dto';
@@ -7,7 +11,10 @@ import { UpdateGoalDto } from './dto/update-goal.dto';
 
 @Injectable()
 export class GoalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gamification: GamificationService,
+  ) {}
 
   async findAll(userId: string, filters: GoalFiltersDto) {
     const goals = await this.prisma.goal.findMany({
@@ -94,9 +101,45 @@ export class GoalsService {
   }
 
   async remove(id: string, userId: string) {
-    await this.ensureGoalOwnership(id, userId);
-    await this.prisma.goal.delete({ where: { id } });
-    return { message: 'Goal deleted' };
+    return this.prisma.$transaction(async (transaction) => {
+      const goal = await transaction.goal.findFirst({
+        where: { id, userId },
+        select: {
+          id: true,
+          tasks: {
+            select: {
+              isCompleted: true,
+              subtasks: { select: { isCompleted: true } },
+            },
+          },
+        },
+      });
+      if (!goal) {
+        throw new NotFoundException('Goal not found');
+      }
+
+      const isCompleted =
+        goal.tasks.length > 0 && goal.tasks.every((task) => task.isCompleted);
+      const removedTaskXp =
+        goal.tasks.filter((task) => task.isCompleted).length * XP_REWARDS.task;
+      const removedSubtaskXp =
+        goal.tasks.reduce(
+          (count, task) =>
+            count +
+            task.subtasks.filter((subtask) => subtask.isCompleted).length,
+          0,
+        ) * XP_REWARDS.subtask;
+      const removedGoalXp = isCompleted ? XP_REWARDS.goal : 0;
+
+      await transaction.goal.delete({ where: { id } });
+      await this.gamification.applyXpChange(
+        transaction,
+        userId,
+        -(removedTaskXp + removedSubtaskXp + removedGoalXp),
+        false,
+      );
+      return { message: 'Goal deleted' };
+    });
   }
 
   private getProgress(tasks: { isCompleted: boolean }[]) {

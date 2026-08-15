@@ -28,17 +28,21 @@ enum HabitFrequency {
 }
 
 model User {
-  id         String     @id @default(uuid())
-  name       String
-  email      String     @unique
-  password   String
-  theme      String     @default("system")
-  categories Category[]
-  goals      Goal[]
-  tasks      Task[]
-  habits     Habit[]
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id             String     @id @default(uuid())
+  name           String
+  email          String     @unique
+  password       String
+  theme          String     @default("system")
+  xp             Int        @default(0)
+  level          Int        @default(1)
+  globalStreak   Int        @default(0)
+  lastActiveDate String?
+  categories     Category[]
+  goals          Goal[]
+  tasks          Task[]
+  habits         Habit[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 }
 
 model Category {

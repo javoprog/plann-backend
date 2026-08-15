@@ -5,6 +5,10 @@ export interface AuthenticatedUser {
   email: string;
   name: string;
   theme: string;
+  xp: number;
+  level: number;
+  globalStreak: number;
+  xpToNextLevel: number;
 }
 
 export const CurrentUser = createParamDecorator(

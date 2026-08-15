@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { HabitFrequency } from '@prisma/client';
+import {
+  GamificationService,
+  getHabitMilestoneBonus,
+  XP_REWARDS,
+} from '../gamification/gamification.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateHabitDto } from './dto/create-habit.dto';
 import { UpdateHabitDto } from './dto/update-habit.dto';
@@ -51,7 +56,10 @@ export function calculateCurrentStreak(
 
 @Injectable()
 export class HabitsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gamification: GamificationService,
+  ) {}
 
   async findAll(userId: string) {
     const monthPrefix = toDateKey(new Date()).slice(0, 7);
@@ -101,18 +109,51 @@ export class HabitsService {
   }
 
   async toggle(id: string, userId: string, date: string) {
-    await this.ensureHabitOwnership(id, userId);
-    const existing = await this.prisma.habitLog.findUnique({
-      where: { habitId_date: { habitId: id, date } },
-    });
+    return this.prisma.$transaction(async (transaction) => {
+      const habit = await transaction.habit.findFirst({
+        where: { id, userId },
+        select: {
+          id: true,
+          frequency: true,
+          logs: {
+            where: { completed: true },
+            select: { id: true, date: true },
+          },
+        },
+      });
+      if (!habit) {
+        throw new NotFoundException('Habit not found');
+      }
 
-    if (existing) {
-      await this.prisma.habitLog.delete({ where: { id: existing.id } });
-      return { habitId: id, date, completed: false };
-    }
+      const existing = habit.logs.find((log) => log.date === date);
+      const beforeDates = habit.logs.map((log) => log.date);
+      const beforeStreak = calculateCurrentStreak(beforeDates, habit.frequency);
 
-    return this.prisma.habitLog.create({
-      data: { habitId: id, date, completed: true },
+      if (existing) {
+        await transaction.habitLog.delete({ where: { id: existing.id } });
+      } else {
+        await transaction.habitLog.create({
+          data: { habitId: id, date, completed: true },
+        });
+      }
+
+      const afterDates = existing
+        ? beforeDates.filter((completedDate) => completedDate !== date)
+        : [...beforeDates, date];
+      const afterStreak = calculateCurrentStreak(afterDates, habit.frequency);
+      const completionXp = existing ? -XP_REWARDS.habit : XP_REWARDS.habit;
+      const milestoneXp =
+        getHabitMilestoneBonus(afterStreak) -
+        getHabitMilestoneBonus(beforeStreak);
+      await this.gamification.applyXpChange(
+        transaction,
+        userId,
+        completionXp + milestoneXp,
+        !existing,
+        date,
+      );
+
+      return { habitId: id, date, completed: !existing };
     });
   }
 
@@ -138,9 +179,38 @@ export class HabitsService {
   }
 
   async remove(id: string, userId: string) {
-    await this.ensureHabitOwnership(id, userId);
-    await this.prisma.habit.delete({ where: { id } });
-    return { message: 'Habit deleted' };
+    return this.prisma.$transaction(async (transaction) => {
+      const habit = await transaction.habit.findFirst({
+        where: { id, userId },
+        select: {
+          id: true,
+          frequency: true,
+          logs: {
+            where: { completed: true },
+            select: { date: true },
+          },
+        },
+      });
+      if (!habit) {
+        throw new NotFoundException('Habit not found');
+      }
+
+      const currentStreak = calculateCurrentStreak(
+        habit.logs.map((log) => log.date),
+        habit.frequency,
+      );
+      const removedXp =
+        habit.logs.length * XP_REWARDS.habit +
+        getHabitMilestoneBonus(currentStreak);
+      await transaction.habit.delete({ where: { id } });
+      await this.gamification.applyXpChange(
+        transaction,
+        userId,
+        -removedXp,
+        false,
+      );
+      return { message: 'Habit deleted' };
+    });
   }
 
   private async ensureHabitOwnership(id: string, userId: string) {

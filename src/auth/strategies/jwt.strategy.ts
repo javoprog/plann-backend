@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
+import { publicProfileSelect, withXpProgress } from '../../users/user-profile';
 
 interface JwtPayload {
   sub: string;
@@ -27,13 +28,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, name: true, theme: true },
+      select: publicProfileSelect,
     });
 
     if (!user) {
       throw new UnauthorizedException('User no longer exists');
     }
 
-    return user;
+    return withXpProgress(user);
   }
 }
