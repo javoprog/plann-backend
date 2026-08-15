@@ -29,7 +29,7 @@ export class AuthService {
     const password = await bcrypt.hash(dto.password, 12);
     const user = await this.prisma.user.create({
       data: { name: dto.name.trim(), email, password },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, theme: true },
     });
 
     return this.createAuthResponse(user);
@@ -48,6 +48,7 @@ export class AuthService {
       id: user.id,
       name: user.name,
       email: user.email,
+      theme: user.theme,
     });
   }
 
@@ -55,6 +56,7 @@ export class AuthService {
     id: string;
     name: string;
     email: string;
+    theme: string;
   }) {
     const token = await this.jwtService.signAsync({
       sub: user.id,

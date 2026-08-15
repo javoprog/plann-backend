@@ -10,6 +10,7 @@ import { TasksModule } from './tasks/tasks.module';
 import { HabitsModule } from './habits/habits.module';
 import { SubtasksModule } from './subtasks/subtasks.module';
 import { SearchModule } from './search/search.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SearchModule } from './search/search.module';
     HabitsModule,
     SubtasksModule,
     SearchModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

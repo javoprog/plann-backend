@@ -32,6 +32,7 @@ model User {
   name       String
   email      String     @unique
   password   String
+  theme      String     @default("system")
   categories Category[]
   goals      Goal[]
   tasks      Task[]
