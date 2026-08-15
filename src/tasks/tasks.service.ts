@@ -2,12 +2,16 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Priority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { TaskCompletionService } from './task-completion.service';
 import { TaskFiltersDto } from './dto/task-filters.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly taskCompletion: TaskCompletionService,
+  ) {}
 
   findAll(userId: string, filters: TaskFiltersDto) {
     const goalId = filters.standalone ? null : filters.goalId;
@@ -53,30 +57,51 @@ export class TasksService {
   }
 
   async update(id: string, userId: string, dto: UpdateTaskDto) {
-    await this.ensureTaskOwnership(id, userId);
-    if (dto.goalId) {
-      await this.ensureGoalOwnership(dto.goalId, userId);
-    }
+    return this.prisma.$transaction(async (transaction) => {
+      const task = await transaction.task.findFirst({
+        where: { id, userId },
+        select: { id: true },
+      });
+      if (!task) {
+        throw new NotFoundException('Task not found');
+      }
 
-    return this.prisma.task.update({
-      where: { id },
-      data: {
-        title: dto.title?.trim(),
-        description: dto.description?.trim(),
-        isCompleted: dto.isCompleted,
-        priority: dto.priority,
-        dueDate:
-          dto.dueDate === undefined
-            ? undefined
-            : dto.dueDate === null
-              ? null
-              : new Date(dto.dueDate),
-        goalId: dto.goalId,
-      },
-      include: {
-        goal: { include: { category: true } },
-        subtasks: { orderBy: { createdAt: 'asc' } },
-      },
+      if (dto.goalId) {
+        const goal = await transaction.goal.findFirst({
+          where: { id: dto.goalId, userId },
+          select: { id: true },
+        });
+        if (!goal) {
+          throw new NotFoundException('Goal not found');
+        }
+      }
+
+      await transaction.task.update({
+        where: { id },
+        data: {
+          title: dto.title?.trim(),
+          description: dto.description?.trim(),
+          isCompleted: dto.isCompleted,
+          priority: dto.priority,
+          dueDate:
+            dto.dueDate === undefined
+              ? undefined
+              : dto.dueDate === null
+                ? null
+                : new Date(dto.dueDate),
+          goalId: dto.goalId,
+        },
+      });
+
+      if (dto.isCompleted !== undefined) {
+        await this.taskCompletion.cascadeToSubtasks(
+          transaction,
+          id,
+          dto.isCompleted,
+        );
+      }
+
+      return this.taskCompletion.getTaskAggregate(transaction, id);
     });
   }
 
