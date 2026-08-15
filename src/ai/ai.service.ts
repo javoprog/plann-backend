@@ -513,7 +513,7 @@ export class AiService {
   private async generateWithGemini(apiKey: string, goal: GoalPromptData) {
     const prompts = this.buildPrompts(goal);
     const model =
-      this.config.get<string>('GEMINI_MODEL') ?? 'gemini-2.5-flash-lite';
+      this.config.get<string>('GEMINI_MODEL') ?? 'gemini-1.5-flash';
     try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
