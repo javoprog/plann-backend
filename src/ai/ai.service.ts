@@ -172,25 +172,26 @@ export function parsePlan(text: string): AiGoalPlan {
       );
     }
 
-    if (
-      item.isRecurring !== undefined &&
-      typeof item.isRecurring !== 'boolean'
-    ) {
+    const rawIsRecurring = item.isRecurring;
+    if (rawIsRecurring !== undefined && typeof rawIsRecurring !== 'boolean') {
       throw new BadGatewayException(
         'AI provider returned invalid task recurrence',
       );
     }
+
+    const rawRecurrenceInterval = item.recurrenceInterval;
     if (
-      item.recurrenceInterval !== undefined &&
-      !isRecurrenceInterval(item.recurrenceInterval)
+      rawRecurrenceInterval !== undefined &&
+      (typeof rawRecurrenceInterval !== 'string' ||
+        !isRecurrenceInterval(rawRecurrenceInterval))
     ) {
       throw new BadGatewayException(
         'AI provider returned invalid task recurrence',
       );
     }
 
-    const isRecurring = item.isRecurring;
-    const recurrenceInterval = item.recurrenceInterval;
+    const isRecurring = rawIsRecurring;
+    const recurrenceInterval = rawRecurrenceInterval;
     if (
       (isRecurring === true && recurrenceInterval === undefined) ||
       (isRecurring !== true && recurrenceInterval !== undefined)
