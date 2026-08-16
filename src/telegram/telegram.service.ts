@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { Priority } from '@prisma/client';
 import { Context, Markup, Telegraf } from 'telegraf';
 import { isHabitScheduledOnDate } from '../habits/habits.service';
 import { HabitsService } from '../habits/habits.service';
@@ -12,6 +13,7 @@ const CALLBACK_TITLE_LENGTH = 36;
 export const TELEGRAM_MENU = {
   today: '📅 План на сегодня',
   stats: '🔥 Мои Стрики и XP',
+  quickTask: '➕ Добавить задачу',
   help: '❓ Помощь',
 } as const;
 
@@ -20,7 +22,10 @@ const TELEGRAM_REPLY_KEYBOARD = Markup.keyboard([
     Markup.button.text(TELEGRAM_MENU.today),
     Markup.button.text(TELEGRAM_MENU.stats),
   ],
-  [Markup.button.text(TELEGRAM_MENU.help)],
+  [
+    Markup.button.text(TELEGRAM_MENU.quickTask),
+    Markup.button.text(TELEGRAM_MENU.help),
+  ],
 ])
   .resize()
   .persistent();
@@ -52,6 +57,7 @@ function compactTitle(title: string) {
 @Injectable()
 export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
+  private readonly awaitingTaskTitles = new Set<string>();
   private bot: Telegraf<Context> | null = null;
 
   constructor(
@@ -183,9 +189,53 @@ export class TelegramService {
         '',
         `${TELEGRAM_MENU.today} — задачи и привычки на сегодня`,
         `${TELEGRAM_MENU.stats} — уровень, XP и текущие серии`,
+        `${TELEGRAM_MENU.quickTask} — быстро добавить задачу на сегодня`,
         `${TELEGRAM_MENU.help} — показать эту справку`,
         '/today — открыть план на сегодня',
       ].join('\n'),
+      TELEGRAM_REPLY_KEYBOARD,
+    );
+  }
+
+  async handleQuickTaskPrompt(context: Context) {
+    const linkedUser = await this.findLinkedUser(context);
+    const chatId = context.chat?.id.toString();
+    if (!linkedUser || !chatId) return;
+
+    this.awaitingTaskTitles.add(chatId);
+    await context.reply('✍️ Напишите название простой задачи на сегодня:');
+  }
+
+  async handleTextInput(context: Context) {
+    const chatId = context.chat?.id.toString();
+    if (!chatId || !this.awaitingTaskTitles.has(chatId)) return;
+
+    const linkedUser = await this.findLinkedUser(context);
+    if (!linkedUser) {
+      this.awaitingTaskTitles.delete(chatId);
+      return;
+    }
+
+    const title =
+      context.message && 'text' in context.message
+        ? cleanTitle(context.message.text)
+        : '';
+    if (title.length < 2 || title.length > 200) {
+      await context.reply(
+        'Название задачи должно содержать от 2 до 200 символов. Попробуйте ещё раз:',
+      );
+      return;
+    }
+
+    await this.tasksService.create(linkedUser.id, {
+      title,
+      dueDate: utcDayBounds().start.toISOString(),
+      goalId: null,
+      priority: Priority.MEDIUM,
+    });
+    this.awaitingTaskTitles.delete(chatId);
+    await context.reply(
+      `✅ Задача «${title}» добавлена на сегодня!`,
       TELEGRAM_REPLY_KEYBOARD,
     );
   }

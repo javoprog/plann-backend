@@ -4,12 +4,14 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { RECURRENCE_INTERVALS } from '../recurrence';
 
 export class CreateTaskDto {
   @ApiProperty({ example: 'Write the case study intro' })
@@ -28,6 +30,16 @@ export class CreateTaskDto {
   @IsOptional()
   @IsBoolean()
   isCompleted?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  isRecurring?: boolean;
+
+  @ApiPropertyOptional({ enum: RECURRENCE_INTERVALS })
+  @IsOptional()
+  @IsIn(RECURRENCE_INTERVALS)
+  recurrenceInterval?: string | null;
 
   @ApiPropertyOptional({ enum: Priority, default: Priority.MEDIUM })
   @IsOptional()

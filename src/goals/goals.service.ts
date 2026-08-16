@@ -9,6 +9,30 @@ import { CreateGoalDto } from './dto/create-goal.dto';
 import { GoalFiltersDto } from './dto/goal-filters.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
 
+interface GoalProgressTask {
+  isCompleted: boolean;
+  subtasks: Array<{ isCompleted: boolean }>;
+}
+
+export function calculateGoalProgress(tasks: GoalProgressTask[]) {
+  const totalTasks = tasks.length;
+  const completionValues = tasks.map((task) => {
+    if (task.subtasks.length === 0) return task.isCompleted ? 1 : 0;
+    const completedSubtasks = task.subtasks.filter(
+      (subtask) => subtask.isCompleted,
+    ).length;
+    return completedSubtasks / task.subtasks.length;
+  });
+  const completedTasks = completionValues.filter((value) => value === 1).length;
+  const progress = totalTasks
+    ? Math.round(
+        (completionValues.reduce((sum, value) => sum + value, 0) / totalTasks) *
+          100,
+      )
+    : 0;
+  return { totalTasks, completedTasks, progress };
+}
+
 @Injectable()
 export class GoalsService {
   constructor(
@@ -25,14 +49,19 @@ export class GoalsService {
       },
       include: {
         category: true,
-        tasks: { select: { isCompleted: true } },
+        tasks: {
+          select: {
+            isCompleted: true,
+            subtasks: { select: { isCompleted: true } },
+          },
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
 
     return goals.map((goal) => {
       const { tasks, ...data } = goal;
-      return { ...data, ...this.getProgress(tasks) };
+      return { ...data, ...calculateGoalProgress(tasks) };
     });
   }
 
@@ -52,7 +81,7 @@ export class GoalsService {
       throw new NotFoundException('Goal not found');
     }
 
-    return { ...goal, ...this.getProgress(goal.tasks) };
+    return { ...goal, ...calculateGoalProgress(goal.tasks) };
   }
 
   async create(userId: string, dto: CreateGoalDto) {
@@ -140,15 +169,6 @@ export class GoalsService {
       );
       return { message: 'Goal deleted' };
     });
-  }
-
-  private getProgress(tasks: { isCompleted: boolean }[]) {
-    const totalTasks = tasks.length;
-    const completedTasks = tasks.filter((task) => task.isCompleted).length;
-    const progress = totalTasks
-      ? Math.round((completedTasks / totalTasks) * 100)
-      : 0;
-    return { totalTasks, completedTasks, progress };
   }
 
   private async ensureGoalOwnership(id: string, userId: string) {

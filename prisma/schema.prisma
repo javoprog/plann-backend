@@ -85,19 +85,21 @@ model Goal {
 }
 
 model Task {
-  id          String    @id @default(uuid())
-  title       String
-  description String?   @db.Text
-  isCompleted Boolean   @default(false)
-  priority    Priority  @default(MEDIUM)
-  dueDate     DateTime?
-  goalId      String?
-  goal        Goal?     @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subtasks    Subtask[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  title              String
+  description        String?   @db.Text
+  isCompleted        Boolean   @default(false)
+  isRecurring        Boolean   @default(false)
+  recurrenceInterval String?
+  priority           Priority  @default(MEDIUM)
+  dueDate            DateTime?
+  goalId             String?
+  goal               Goal?     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subtasks           Subtask[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   @@index([userId])
   @@index([goalId])

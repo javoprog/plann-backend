@@ -10,6 +10,10 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { TaskCompletionService } from './task-completion.service';
 import { TaskFiltersDto } from './dto/task-filters.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import {
+  calculateNextRecurringDueDate,
+  isRecurrenceInterval,
+} from './recurrence';
 
 @Injectable()
 export class TasksService {
@@ -71,6 +75,8 @@ export class TasksService {
           title: dto.title.trim(),
           description: dto.description?.trim(),
           isCompleted: dto.isCompleted ?? false,
+          isRecurring: dto.isRecurring ?? false,
+          recurrenceInterval: dto.isRecurring ? dto.recurrenceInterval : null,
           priority: dto.priority ?? Priority.MEDIUM,
           dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
           goalId: dto.goalId ?? undefined,
@@ -104,6 +110,12 @@ export class TasksService {
           id: true,
           goalId: true,
           isCompleted: true,
+          isRecurring: true,
+          recurrenceInterval: true,
+          title: true,
+          description: true,
+          priority: true,
+          dueDate: true,
           subtasks: { select: { isCompleted: true } },
         },
       });
@@ -112,6 +124,10 @@ export class TasksService {
       }
 
       const nextGoalId = dto.goalId === undefined ? task.goalId : dto.goalId;
+      const nextIsRecurring = dto.isRecurring ?? task.isRecurring;
+      const nextRecurrenceInterval = nextIsRecurring
+        ? (dto.recurrenceInterval ?? task.recurrenceInterval)
+        : null;
       const goalIds = [task.goalId, nextGoalId];
       const beforeGoals = await this.gamification.getGoalCompletionStates(
         transaction,
@@ -134,6 +150,8 @@ export class TasksService {
           title: dto.title?.trim(),
           description: dto.description?.trim(),
           isCompleted: dto.isCompleted,
+          isRecurring: nextIsRecurring,
+          recurrenceInterval: nextRecurrenceInterval,
           priority: dto.priority,
           dueDate:
             dto.dueDate === undefined
@@ -157,6 +175,30 @@ export class TasksService {
         transaction,
         id,
       );
+      if (
+        !task.isCompleted &&
+        updatedTask.isCompleted &&
+        updatedTask.isRecurring &&
+        updatedTask.dueDate &&
+        isRecurrenceInterval(updatedTask.recurrenceInterval)
+      ) {
+        await transaction.task.create({
+          data: {
+            title: updatedTask.title,
+            description: updatedTask.description,
+            isCompleted: false,
+            isRecurring: true,
+            recurrenceInterval: updatedTask.recurrenceInterval,
+            priority: updatedTask.priority,
+            dueDate: calculateNextRecurringDueDate(
+              updatedTask.dueDate,
+              updatedTask.recurrenceInterval,
+            ),
+            goalId: updatedTask.goalId,
+            userId,
+          },
+        });
+      }
       let xpDelta = getCompletionXp(
         task.isCompleted,
         updatedTask.isCompleted,

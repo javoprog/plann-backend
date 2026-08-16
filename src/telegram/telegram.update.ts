@@ -39,8 +39,14 @@ export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
     this.bot.hears(TELEGRAM_MENU.stats, (context) =>
       this.telegramService.handleStats(context),
     );
+    this.bot.hears(TELEGRAM_MENU.quickTask, (context) =>
+      this.telegramService.handleQuickTaskPrompt(context),
+    );
     this.bot.hears(TELEGRAM_MENU.help, (context) =>
       this.telegramService.handleHelp(context),
+    );
+    this.bot.on('text', (context) =>
+      this.telegramService.handleTextInput(context),
     );
     this.bot.action(/^toggle_(task|habit)_.+$/, (context) =>
       this.telegramService.handleToggle(context),
