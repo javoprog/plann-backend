@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HabitFrequency, Prisma, Priority } from '@prisma/client';
@@ -12,7 +13,11 @@ import { PrismaService } from '../prisma/prisma.service';
 type SupportedLanguage = 'en' | 'ru' | 'uz';
 
 export interface AiGoalPlan {
-  tasks: Array<{ title: string; priority: Priority }>;
+  tasks: Array<{
+    title: string;
+    priority: Priority;
+    subtasks?: string[];
+  }>;
   habits: Array<{ title: string; frequency: HabitFrequency }>;
 }
 
@@ -30,22 +35,28 @@ const AI_PLAN_SCHEMA = {
   properties: {
     tasks: {
       type: 'array',
-      minItems: 4,
-      maxItems: 6,
+      minItems: 5,
+      maxItems: 8,
       items: {
         type: 'object',
         additionalProperties: false,
         properties: {
           title: { type: 'string' },
           priority: { type: 'string', enum: Object.values(Priority) },
+          subtasks: {
+            type: 'array',
+            minItems: 2,
+            maxItems: 4,
+            items: { type: 'string' },
+          },
         },
         required: ['title', 'priority'],
       },
     },
     habits: {
       type: 'array',
-      minItems: 2,
-      maxItems: 3,
+      minItems: 3,
+      maxItems: 5,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -85,43 +96,6 @@ function getSupportedLanguage(language: string): SupportedLanguage {
   return language === 'ru' || language === 'uz' ? language : 'en';
 }
 
-function normalizeCategory(category: string | null) {
-  const value = category?.trim().toLowerCase() ?? '';
-  if (
-    value.includes('work') ||
-    value.includes('работ') ||
-    value.includes('ish')
-  ) {
-    return 'work';
-  }
-  if (
-    value.includes('education') ||
-    value.includes('образован') ||
-    value.includes("ta'lim")
-  ) {
-    return 'education';
-  }
-  if (
-    value.includes('health') ||
-    value.includes('здоров') ||
-    value.includes("sog'liq")
-  ) {
-    return 'health';
-  }
-  if (
-    value.includes('travel') ||
-    value.includes('путеше') ||
-    value.includes('sayohat')
-  ) {
-    return 'travel';
-  }
-  return 'personal';
-}
-
-function limitTitle(title: string) {
-  return title.length <= 200 ? title : `${title.slice(0, 197).trimEnd()}...`;
-}
-
 export function hasInsufficientGoalData(
   title: string,
   description: string | null,
@@ -144,156 +118,6 @@ export function hasInsufficientGoalData(
   return false;
 }
 
-export function buildFallbackPlan(goal: GoalPromptData): AiGoalPlan {
-  const language = getSupportedLanguage(goal.user.language);
-  const category = normalizeCategory(goal.category?.name ?? null);
-  const title = goal.title.trim();
-
-  const categoryTask = {
-    en: {
-      work: `Prepare the main deliverable for “${title}”`,
-      education: `Complete the first focused learning module for “${title}”`,
-      health: `Schedule a safe first training session for “${title}”`,
-      travel: `Confirm the route, budget, and key bookings for “${title}”`,
-      personal: `Reserve focused time for the first step toward “${title}”`,
-    },
-    ru: {
-      work: `Подготовить основной результат для цели «${title}»`,
-      education: `Завершить первый учебный блок для цели «${title}»`,
-      health: `Запланировать безопасную первую тренировку для цели «${title}»`,
-      travel: `Подтвердить маршрут, бюджет и основные бронирования для цели «${title}»`,
-      personal: `Выделить время на первый шаг к цели «${title}»`,
-    },
-    uz: {
-      work: `“${title}” uchun asosiy ish natijasini tayyorlash`,
-      education: `“${title}” uchun birinchi o‘quv modulini yakunlash`,
-      health: `“${title}” uchun xavfsiz ilk mashg‘ulotni rejalashtirish`,
-      travel: `“${title}” uchun yo‘nalish, budjet va asosiy bandlovlarni tasdiqlash`,
-      personal: `“${title}” sari birinchi qadam uchun vaqt ajratish`,
-    },
-  }[language][category];
-
-  const plans: Record<SupportedLanguage, AiGoalPlan> = {
-    en: {
-      tasks: [
-        {
-          title: `Define a measurable result for “${title}”`,
-          priority: Priority.HIGH,
-        },
-        {
-          title: `Break “${title}” into weekly milestones`,
-          priority: Priority.HIGH,
-        },
-        { title: categoryTask, priority: Priority.HIGH },
-        {
-          title: `Review progress and remove one blocker for “${title}”`,
-          priority: Priority.MEDIUM,
-        },
-        {
-          title: `Finish and verify the outcome for “${title}”`,
-          priority: Priority.MEDIUM,
-        },
-      ],
-      habits: [
-        {
-          title: `Spend 20 focused minutes on “${title}”`,
-          frequency: HabitFrequency.DAILY,
-        },
-        {
-          title: `Review progress and choose the next action for “${title}”`,
-          frequency: HabitFrequency.WEEKDAYS,
-        },
-        {
-          title: `Reflect and adjust next week’s plan for “${title}”`,
-          frequency: HabitFrequency.WEEKENDS,
-        },
-      ],
-    },
-    ru: {
-      tasks: [
-        {
-          title: `Определить измеримый результат для цели «${title}»`,
-          priority: Priority.HIGH,
-        },
-        {
-          title: `Разбить цель «${title}» на недельные этапы`,
-          priority: Priority.HIGH,
-        },
-        { title: categoryTask, priority: Priority.HIGH },
-        {
-          title: `Проверить прогресс и устранить одно препятствие для цели «${title}»`,
-          priority: Priority.MEDIUM,
-        },
-        {
-          title: `Завершить и проверить результат цели «${title}»`,
-          priority: Priority.MEDIUM,
-        },
-      ],
-      habits: [
-        {
-          title: `Уделять цели «${title}» 20 минут без отвлечений`,
-          frequency: HabitFrequency.DAILY,
-        },
-        {
-          title: `Проверять прогресс и выбирать следующий шаг для цели «${title}»`,
-          frequency: HabitFrequency.WEEKDAYS,
-        },
-        {
-          title: `Подводить итоги и корректировать план по цели «${title}»`,
-          frequency: HabitFrequency.WEEKENDS,
-        },
-      ],
-    },
-    uz: {
-      tasks: [
-        {
-          title: `“${title}” uchun o‘lchanadigan natijani belgilash`,
-          priority: Priority.HIGH,
-        },
-        {
-          title: `“${title}” maqsadini haftalik bosqichlarga bo‘lish`,
-          priority: Priority.HIGH,
-        },
-        { title: categoryTask, priority: Priority.HIGH },
-        {
-          title: `“${title}” jarayonini tekshirib, bitta to‘siqni bartaraf etish`,
-          priority: Priority.MEDIUM,
-        },
-        {
-          title: `“${title}” natijasini yakunlash va tekshirish`,
-          priority: Priority.MEDIUM,
-        },
-      ],
-      habits: [
-        {
-          title: `Har kuni “${title}” uchun 20 daqiqa diqqat bilan ishlash`,
-          frequency: HabitFrequency.DAILY,
-        },
-        {
-          title: `“${title}” jarayonini ko‘rib, keyingi qadamni tanlash`,
-          frequency: HabitFrequency.WEEKDAYS,
-        },
-        {
-          title: `“${title}” rejasini sarhisob qilish va keyingi haftaga moslash`,
-          frequency: HabitFrequency.WEEKENDS,
-        },
-      ],
-    },
-  };
-
-  const plan = plans[language];
-  return {
-    tasks: plan.tasks.map((task) => ({
-      ...task,
-      title: limitTitle(task.title),
-    })),
-    habits: plan.habits.map((habit) => ({
-      ...habit,
-      title: limitTitle(habit.title),
-    })),
-  };
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -314,10 +138,10 @@ function parsePlan(text: string): AiGoalPlan {
     throw new BadGatewayException('AI provider returned an invalid plan');
   }
   if (
-    payload.tasks.length < 4 ||
-    payload.tasks.length > 6 ||
-    payload.habits.length < 2 ||
-    payload.habits.length > 3
+    payload.tasks.length < 5 ||
+    payload.tasks.length > 8 ||
+    payload.habits.length < 3 ||
+    payload.habits.length > 5
   ) {
     throw new BadGatewayException('AI provider returned an invalid plan size');
   }
@@ -336,7 +160,39 @@ function parsePlan(text: string): AiGoalPlan {
         'AI provider returned an invalid task title',
       );
     }
-    return { title, priority: item.priority as Priority };
+
+    let subtasks: string[] | undefined;
+    if (item.subtasks !== undefined) {
+      if (
+        !Array.isArray(item.subtasks) ||
+        item.subtasks.length < 2 ||
+        item.subtasks.length > 4
+      ) {
+        throw new BadGatewayException(
+          'AI provider returned invalid task subtasks',
+        );
+      }
+      subtasks = item.subtasks.map((subtask) => {
+        if (typeof subtask !== 'string') {
+          throw new BadGatewayException(
+            'AI provider returned invalid task subtasks',
+          );
+        }
+        const subtaskTitle = subtask.trim();
+        if (subtaskTitle.length < 2 || subtaskTitle.length > 200) {
+          throw new BadGatewayException(
+            'AI provider returned invalid task subtasks',
+          );
+        }
+        return subtaskTitle;
+      });
+    }
+
+    return {
+      title,
+      priority: item.priority as Priority,
+      ...(subtasks ? { subtasks } : {}),
+    };
   });
 
   const habits = payload.habits.map((item) => {
@@ -396,11 +252,22 @@ export class AiService {
 
     const openAiKey = this.config.get<string>('OPENAI_API_KEY')?.trim();
     const geminiKey = this.config.get<string>('GEMINI_API_KEY')?.trim();
-    const plan = openAiKey
-      ? await this.generateWithOpenAi(openAiKey, goal)
-      : geminiKey
-        ? await this.generateWithGemini(geminiKey, goal)
-        : buildFallbackPlan(goal);
+    if (!openAiKey && !geminiKey) {
+      throw new ServiceUnavailableException(
+        'AI service is temporarily unavailable. Please configure an API key.',
+      );
+    }
+
+    let plan: AiGoalPlan;
+    try {
+      plan = openAiKey
+        ? await this.generateWithOpenAi(openAiKey, goal)
+        : await this.generateWithGemini(geminiKey!, goal);
+    } catch {
+      throw new ServiceUnavailableException(
+        'AI service is temporarily unavailable. Please try again later.',
+      );
+    }
 
     return this.prisma.$transaction(
       async (transaction) => {
@@ -420,12 +287,6 @@ export class AiService {
           );
         }
 
-        const tasks = plan.tasks.map((task) => ({
-          title: task.title.trim(),
-          priority: task.priority,
-          goalId,
-          userId,
-        }));
         const habits = plan.habits.map((habit) => ({
           title: habit.title.trim(),
           frequency: habit.frequency,
@@ -434,14 +295,33 @@ export class AiService {
           userId,
         }));
 
-        const taskResult = await transaction.task.createMany({ data: tasks });
+        let createdTasksCount = 0;
+        for (const taskData of plan.tasks) {
+          await transaction.task.create({
+            data: {
+              title: taskData.title.trim(),
+              priority: taskData.priority,
+              goalId,
+              userId,
+              subtasks:
+                taskData.subtasks && taskData.subtasks.length > 0
+                  ? {
+                      create: taskData.subtasks.map((subtaskTitle) => ({
+                        title: subtaskTitle.trim(),
+                      })),
+                    }
+                  : undefined,
+            },
+          });
+          createdTasksCount++;
+        }
         const habitResult = await transaction.habit.createMany({
           data: habits,
         });
 
         return {
           status: 'SUCCESS' as const,
-          createdTasksCount: taskResult.count,
+          createdTasksCount,
           createdHabitsCount: habitResult.count,
         };
       },
@@ -454,7 +334,8 @@ export class AiService {
     const system = [
       'You are a concise personal-planning assistant.',
       `Respond only in ${LANGUAGE_NAMES[language]}.`,
-      'Create 4-6 concrete, independently actionable tasks and 2-3 sustainable habits.',
+      'Create 5-8 concrete, independently actionable tasks and 3-5 sustainable habits.',
+      'For each task, provide 2-4 step-by-step subtasks.',
       'Use only task priorities LOW, MEDIUM, HIGH and habit frequencies DAILY, WEEKDAYS, WEEKENDS.',
       'Keep every title under 200 characters and avoid duplicate ideas.',
     ].join(' ');
