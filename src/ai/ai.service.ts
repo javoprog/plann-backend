@@ -336,6 +336,9 @@ export class AiService {
       `Respond only in ${LANGUAGE_NAMES[language]}.`,
       'Create 5-8 concrete, independently actionable tasks and 3-5 sustainable habits.',
       'For each task, provide 2-4 step-by-step subtasks.',
+      'CRITICAL CLASSIFICATION RULE: Tasks and subtasks MUST be strictly one-time finite actions, such as buying supplies, configuring an alarm, or scheduling a session.',
+      'NEVER generate recurring rules or cadence-based behaviors such as every day, daily, weekly, or before bed inside tasks or subtasks.',
+      'Habits MUST be recurring daily or weekly behaviors, such as putting a phone away before sleep, drinking water daily, or waking at a consistent time.',
       'Use only task priorities LOW, MEDIUM, HIGH and habit frequencies DAILY, WEEKDAYS, WEEKENDS.',
       'Keep every title under 200 characters and avoid duplicate ideas.',
     ].join(' ');

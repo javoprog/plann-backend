@@ -34,6 +34,14 @@ export class TasksController {
     return this.tasksService.findAll(user.id, filters);
   }
 
+  @Get(':id')
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tasksService.findOne(id, user.id);
+  }
+
   @Post()
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateTaskDto) {
     return this.tasksService.create(user.id, dto);

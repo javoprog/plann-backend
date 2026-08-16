@@ -40,6 +40,18 @@ export class TasksService {
     });
   }
 
+  async findOne(id: string, userId: string) {
+    const task = await this.prisma.task.findFirst({
+      where: { id, userId },
+      include: {
+        goal: { include: { category: true } },
+        subtasks: { orderBy: { createdAt: 'asc' } },
+      },
+    });
+    if (!task) throw new NotFoundException('Task not found');
+    return task;
+  }
+
   async create(userId: string, dto: CreateTaskDto) {
     return this.prisma.$transaction(async (transaction) => {
       if (dto.goalId) {

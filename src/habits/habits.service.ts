@@ -86,6 +86,29 @@ export class HabitsService {
     }));
   }
 
+  async findOne(id: string, userId: string) {
+    const habit = await this.prisma.habit.findFirst({
+      where: { id, userId },
+      include: {
+        category: true,
+        goal: { select: { id: true, title: true } },
+        logs: {
+          where: { completed: true },
+          orderBy: { date: 'asc' },
+        },
+      },
+    });
+    if (!habit) throw new NotFoundException('Habit not found');
+
+    return {
+      ...habit,
+      currentStreak: calculateCurrentStreak(
+        habit.logs.map((log) => log.date),
+        habit.frequency,
+      ),
+    };
+  }
+
   async create(userId: string, dto: CreateHabitDto) {
     await this.ensureRelationsAreAvailable(userId, dto.goalId, dto.categoryId);
 

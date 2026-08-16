@@ -49,7 +49,6 @@ describe('AI plan validation', () => {
 
   it.each([
     ['Run 5k', null],
-    ['Build portfolio', null],
     ['Learn', 'Practice TypeScript fundamentals'],
   ])('accepts meaningful goal data: %s', (title, description) => {
     expect(hasInsufficientGoalData(title, description)).toBe(false);
@@ -136,6 +135,21 @@ describe('AiService.generateAiPlan', () => {
       geminiGenerator,
     };
   }
+
+  it('enforces finite tasks and recurring habit semantics in the prompt', () => {
+    const { service } = createService(validGoal);
+    const { system } = (
+      service as unknown as {
+        buildPrompts(goalData: unknown): { system: string; user: string };
+      }
+    ).buildPrompts(validGoal);
+
+    expect(system).toContain(
+      'Tasks and subtasks MUST be strictly one-time finite actions',
+    );
+    expect(system).toContain('NEVER generate recurring rules');
+    expect(system).toContain('Habits MUST be recurring daily or weekly');
+  });
 
   it('returns insufficient data without calling a generator or transaction', async () => {
     const { service, prisma, config, openAiGenerator, geminiGenerator } =

@@ -30,6 +30,14 @@ export class HabitsController {
     return this.habitsService.findAll(user.id);
   }
 
+  @Get(':id')
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.habitsService.findOne(id, user.id);
+  }
+
   @Post()
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateHabitDto) {
     return this.habitsService.create(user.id, dto);
