@@ -9,6 +9,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { HabitFrequency, Prisma, Priority } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  isRecurrenceInterval,
+  type RecurrenceInterval,
+} from '../tasks/recurrence';
 
 type SupportedLanguage = 'en' | 'ru' | 'uz';
 
@@ -16,6 +20,8 @@ export interface AiGoalPlan {
   tasks: Array<{
     title: string;
     priority: Priority;
+    isRecurring?: boolean;
+    recurrenceInterval?: RecurrenceInterval;
     subtasks?: string[];
   }>;
   habits: Array<{ title: string; frequency: HabitFrequency }>;
@@ -43,6 +49,11 @@ const AI_PLAN_SCHEMA = {
         properties: {
           title: { type: 'string' },
           priority: { type: 'string', enum: Object.values(Priority) },
+          isRecurring: { type: 'boolean' },
+          recurrenceInterval: {
+            type: 'string',
+            enum: ['DAILY', 'WEEKLY', 'MONTHLY'],
+          },
           subtasks: {
             type: 'array',
             minItems: 2,
@@ -122,7 +133,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function parsePlan(text: string): AiGoalPlan {
+export function parsePlan(text: string): AiGoalPlan {
   let payload: unknown;
   try {
     payload = JSON.parse(text) as unknown;
@@ -161,6 +172,34 @@ function parsePlan(text: string): AiGoalPlan {
       );
     }
 
+    if (
+      item.isRecurring !== undefined &&
+      typeof item.isRecurring !== 'boolean'
+    ) {
+      throw new BadGatewayException(
+        'AI provider returned invalid task recurrence',
+      );
+    }
+    if (
+      item.recurrenceInterval !== undefined &&
+      !isRecurrenceInterval(item.recurrenceInterval)
+    ) {
+      throw new BadGatewayException(
+        'AI provider returned invalid task recurrence',
+      );
+    }
+
+    const isRecurring = item.isRecurring;
+    const recurrenceInterval = item.recurrenceInterval;
+    if (
+      (isRecurring === true && recurrenceInterval === undefined) ||
+      (isRecurring !== true && recurrenceInterval !== undefined)
+    ) {
+      throw new BadGatewayException(
+        'AI provider returned invalid task recurrence',
+      );
+    }
+
     let subtasks: string[] | undefined;
     if (item.subtasks !== undefined) {
       if (
@@ -191,6 +230,8 @@ function parsePlan(text: string): AiGoalPlan {
     return {
       title,
       priority: item.priority as Priority,
+      ...(isRecurring !== undefined ? { isRecurring } : {}),
+      ...(recurrenceInterval ? { recurrenceInterval } : {}),
       ...(subtasks ? { subtasks } : {}),
     };
   });
@@ -301,6 +342,8 @@ export class AiService {
             data: {
               title: taskData.title.trim(),
               priority: taskData.priority,
+              isRecurring: taskData.isRecurring ?? false,
+              recurrenceInterval: taskData.recurrenceInterval ?? null,
               goalId,
               userId,
               subtasks:
@@ -338,6 +381,7 @@ export class AiService {
       'For each task, provide 2-4 step-by-step subtasks.',
       'CRITICAL CLASSIFICATION RULE: Tasks and subtasks MUST be strictly one-time finite actions, such as buying supplies, configuring an alarm, or scheduling a session.',
       'NEVER generate recurring rules or cadence-based behaviors such as every day, daily, weekly, or before bed inside tasks or subtasks.',
+      'If a finite task should repeat on a schedule, express that only with isRecurring=true and recurrenceInterval=DAILY, WEEKLY, or MONTHLY; otherwise omit both recurrence fields.',
       'Habits MUST be recurring daily or weekly behaviors, such as putting a phone away before sleep, drinking water daily, or waking at a consistent time.',
       'Use only task priorities LOW, MEDIUM, HIGH and habit frequencies DAILY, WEEKDAYS, WEEKENDS.',
       'Keep every title under 200 characters and avoid duplicate ideas.',

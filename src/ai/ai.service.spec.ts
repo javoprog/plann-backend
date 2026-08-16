@@ -9,6 +9,7 @@ import {
   AiService,
   type AiGoalPlan,
   hasInsufficientGoalData,
+  parsePlan,
 } from './ai.service';
 
 const validGoal = {
@@ -25,10 +26,13 @@ const generatedPlan: AiGoalPlan = {
   tasks: Array.from({ length: 5 }, (_, index) => ({
     title: `Task ${index + 1}`,
     priority: index < 2 ? Priority.HIGH : Priority.MEDIUM,
-    subtasks: [
-      `Task ${index + 1} subtask 1`,
-      `Task ${index + 1} subtask 2`,
-    ],
+    ...(index === 0
+      ? {
+          isRecurring: true,
+          recurrenceInterval: 'WEEKLY' as const,
+        }
+      : {}),
+    subtasks: [`Task ${index + 1} subtask 1`, `Task ${index + 1} subtask 2`],
   })),
   habits: [
     { title: 'Habit 1', frequency: HabitFrequency.DAILY },
@@ -53,6 +57,36 @@ describe('AI plan validation', () => {
   ])('accepts meaningful goal data: %s', (title, description) => {
     expect(hasInsufficientGoalData(title, description)).toBe(false);
   });
+
+  it('parses optional recurring task metadata', () => {
+    const plan = parsePlan(JSON.stringify(generatedPlan));
+
+    expect(plan.tasks[0]).toEqual(
+      expect.objectContaining({
+        isRecurring: true,
+        recurrenceInterval: 'WEEKLY',
+      }),
+    );
+    expect(plan.tasks[1].isRecurring).toBeUndefined();
+    expect(plan.tasks[1].recurrenceInterval).toBeUndefined();
+  });
+
+  it.each([
+    { isRecurring: true, recurrenceInterval: undefined },
+    { isRecurring: false, recurrenceInterval: 'DAILY' },
+    { isRecurring: true, recurrenceInterval: 'YEARLY' },
+  ])('rejects inconsistent task recurrence metadata: %j', (recurrence) => {
+    const plan = {
+      ...generatedPlan,
+      tasks: generatedPlan.tasks.map((task, index) =>
+        index === 0 ? { ...task, ...recurrence } : task,
+      ),
+    };
+
+    expect(() => parsePlan(JSON.stringify(plan))).toThrow(
+      'AI provider returned invalid task recurrence',
+    );
+  });
 });
 
 describe('AiService.generateAiPlan', () => {
@@ -63,7 +97,19 @@ describe('AiService.generateAiPlan', () => {
       geminiKey?: string | null;
     } = {},
   ) {
-    const taskCreate = jest.fn().mockResolvedValue({ id: 'task-id' });
+    const taskCreate = jest.fn(
+      (_args: {
+        data: {
+          title: string;
+          priority: Priority;
+          isRecurring: boolean;
+          recurrenceInterval: 'DAILY' | 'WEEKLY' | 'MONTHLY' | null;
+          goalId: string;
+          userId: string;
+          subtasks?: { create: Array<{ title: string }> };
+        };
+      }) => Promise.resolve({ id: `${_args.data.title}-id` }),
+    );
     const habitCreateMany = jest.fn(
       (args: {
         data: Array<{
@@ -109,10 +155,7 @@ describe('AiService.generateAiPlan', () => {
       prisma as unknown as PrismaService,
       config as unknown as ConfigService,
     );
-    type Generator = (
-      apiKey: string,
-      goalData: unknown,
-    ) => Promise<AiGoalPlan>;
+    type Generator = (apiKey: string, goalData: unknown) => Promise<AiGoalPlan>;
     const providerMethods = service as unknown as {
       generateWithOpenAi: Generator;
       generateWithGemini: Generator;
@@ -148,6 +191,9 @@ describe('AiService.generateAiPlan', () => {
       'Tasks and subtasks MUST be strictly one-time finite actions',
     );
     expect(system).toContain('NEVER generate recurring rules');
+    expect(system).toContain(
+      'express that only with isRecurring=true and recurrenceInterval',
+    );
     expect(system).toContain('Habits MUST be recurring daily or weekly');
   });
 
@@ -267,6 +313,8 @@ describe('AiService.generateAiPlan', () => {
       data: {
         title: 'Task 1',
         priority: Priority.HIGH,
+        isRecurring: true,
+        recurrenceInterval: 'WEEKLY',
         goalId: 'goal-id',
         userId: 'user-id',
         subtasks: {
@@ -277,6 +325,12 @@ describe('AiService.generateAiPlan', () => {
         },
       },
     });
+    expect(taskCreate.mock.calls[1][0].data).toEqual(
+      expect.objectContaining({
+        isRecurring: false,
+        recurrenceInterval: null,
+      }),
+    );
     expect(
       taskCreate.mock.calls.every(
         ([args]) =>
