@@ -3,20 +3,30 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateLanguageDto } from './dto/update-language.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
+import { UpdateTelegramNotificationsDto } from './dto/update-telegram-notifications.dto';
 import { publicProfileSelect, withXpProgress } from './user-profile';
+
+const TELEGRAM_LINK_TTL_MS = 15 * 60 * 1000;
+const TELEGRAM_LINK_CODE_ATTEMPTS = 5;
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async findProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -92,6 +102,69 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { language: dto.language },
+      select: publicProfileSelect,
+    });
+    return withXpProgress(user);
+  }
+
+  async createTelegramLinkCode(userId: string) {
+    const botUsername = this.config
+      .get<string>('TELEGRAM_BOT_USERNAME')
+      ?.trim()
+      .replace(/^@/, '');
+    if (!botUsername) {
+      throw new ServiceUnavailableException('Telegram bot is not configured');
+    }
+
+    for (let attempt = 0; attempt < TELEGRAM_LINK_CODE_ATTEMPTS; attempt += 1) {
+      const code = randomInt(100000, 1000000).toString();
+      try {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            telegramLinkCode: code,
+            telegramLinkExpiresAt: new Date(Date.now() + TELEGRAM_LINK_TTL_MS),
+          },
+        });
+        return {
+          code,
+          botUrl: `https://t.me/${botUsername}?start=${code}`,
+        };
+      } catch (error) {
+        const isCodeCollision =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002';
+        if (!isCodeCollision || attempt === TELEGRAM_LINK_CODE_ATTEMPTS - 1) {
+          throw error;
+        }
+      }
+    }
+
+    throw new ServiceUnavailableException(
+      'Could not create a Telegram link code',
+    );
+  }
+
+  async updateTelegramNotifications(
+    userId: string,
+    dto: UpdateTelegramNotificationsDto,
+  ) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { telegramNotifications: dto.telegramNotifications },
+      select: publicProfileSelect,
+    });
+    return withXpProgress(user);
+  }
+
+  async unlinkTelegram(userId: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        telegramChatId: null,
+        telegramLinkCode: null,
+        telegramLinkExpiresAt: null,
+      },
       select: publicProfileSelect,
     });
     return withXpProgress(user);

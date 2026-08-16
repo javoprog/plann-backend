@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -13,10 +14,12 @@ import { SearchModule } from './search/search.module';
 import { UsersModule } from './users/users.module';
 import { GamificationModule } from './gamification/gamification.module';
 import { AiModule } from './ai/ai.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     GamificationModule,
     AiModule,
@@ -28,6 +31,7 @@ import { AiModule } from './ai/ai.module';
     SubtasksModule,
     SearchModule,
     UsersModule,
+    TelegramModule,
   ],
   controllers: [AppController],
   providers: [AppService],

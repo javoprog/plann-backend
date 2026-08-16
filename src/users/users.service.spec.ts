@@ -3,6 +3,7 @@ import {
   ConflictException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from './users.service';
 
@@ -32,6 +33,8 @@ describe('UsersService', () => {
     xp: 0,
     level: 1,
     globalStreak: 0,
+    telegramChatId: null,
+    telegramNotifications: true,
   };
   const mockFindFirst = jest.fn();
   const mockFindUnique = jest.fn();
@@ -43,7 +46,10 @@ describe('UsersService', () => {
       update: mockUpdate,
     },
   } as unknown as PrismaService;
-  const service = new UsersService(prisma);
+  const config = {
+    get: jest.fn(),
+  } as unknown as ConfigService;
+  const service = new UsersService(prisma, config);
 
   beforeEach(() => {
     jest.clearAllMocks();

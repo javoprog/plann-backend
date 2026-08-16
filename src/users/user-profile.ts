@@ -9,6 +9,8 @@ export const publicProfileSelect = {
   xp: true,
   level: true,
   globalStreak: true,
+  telegramChatId: true,
+  telegramNotifications: true,
 } satisfies Prisma.UserSelect;
 
 export type PublicProfile = Prisma.UserGetPayload<{

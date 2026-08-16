@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/decorators/current-user.decorator';
@@ -7,6 +15,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { UpdateLanguageDto } from './dto/update-language.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateThemeDto } from './dto/update-theme.dto';
+import { UpdateTelegramNotificationsDto } from './dto/update-telegram-notifications.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('users')
@@ -51,5 +60,23 @@ export class UsersController {
     @Body() dto: UpdateLanguageDto,
   ) {
     return this.usersService.updateLanguage(user.id, dto);
+  }
+
+  @Post('telegram-link-code')
+  createTelegramLinkCode(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.createTelegramLinkCode(user.id);
+  }
+
+  @Patch('telegram-notifications')
+  updateTelegramNotifications(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateTelegramNotificationsDto,
+  ) {
+    return this.usersService.updateTelegramNotifications(user.id, dto);
+  }
+
+  @Delete('telegram')
+  unlinkTelegram(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.unlinkTelegram(user.id);
   }
 }

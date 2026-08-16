@@ -15,7 +15,7 @@ function toDateKey(date: Date) {
   return date.toISOString().slice(0, DATE_PART_LENGTH);
 }
 
-function isScheduledDay(date: Date, frequency: HabitFrequency) {
+export function isHabitScheduledOnDate(date: Date, frequency: HabitFrequency) {
   const weekday = date.getUTCDay();
   if (frequency === HabitFrequency.WEEKDAYS) {
     return weekday >= 1 && weekday <= 5;
@@ -38,7 +38,7 @@ export function calculateCurrentStreak(
   let streak = 0;
 
   for (let checkedDays = 0; checkedDays < 3660; checkedDays += 1) {
-    if (!isScheduledDay(cursor, frequency)) {
+    if (!isHabitScheduledOnDate(cursor, frequency)) {
       cursor.setUTCDate(cursor.getUTCDate() - 1);
       continue;
     }
