@@ -18,7 +18,7 @@ export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
     private readonly telegramService: TelegramService,
   ) {}
 
-  async onModuleInit() {
+  onModuleInit() {
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN')?.trim();
     if (!token) {
       this.logger.warn(
@@ -51,15 +51,15 @@ export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    try {
-      await this.bot.launch();
-      this.logger.log('Telegram bot polling launched successfully');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(
-        `Failed to launch Telegram bot (polling conflict or network error): ${message}`,
-      );
-    }
+    void this.bot
+      .launch()
+      .then(() => {
+        this.logger.log('Telegram bot polling launched successfully');
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Failed to launch Telegram bot: ${message}`);
+      });
   }
 
   onModuleDestroy() {
