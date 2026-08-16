@@ -22,7 +22,7 @@ export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
     const token = this.config.get<string>('TELEGRAM_BOT_TOKEN')?.trim();
     if (!token) {
       this.logger.warn(
-        'TELEGRAM_BOT_TOKEN is not configured; Telegram polling is disabled',
+        'TELEGRAM_BOT_TOKEN is not configured. Skipping Telegram bot polling.',
       );
       return;
     }
@@ -42,12 +42,25 @@ export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    await this.bot.launch();
-    this.logger.log('Telegram bot polling started');
+    try {
+      await this.bot.launch();
+      this.logger.log('Telegram bot polling launched successfully');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to launch Telegram bot (polling conflict or network error): ${message}`,
+      );
+    }
   }
 
   onModuleDestroy() {
-    this.bot?.stop('Nest application shutdown');
-    this.telegramService.detachBot();
+    try {
+      this.bot?.stop('SIGTERM');
+    } catch {
+      // Telegraf throws when polling did not start or already stopped.
+    } finally {
+      this.telegramService.detachBot();
+      this.bot = null;
+    }
   }
 }
