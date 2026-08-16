@@ -9,6 +9,22 @@ import { TasksService } from '../tasks/tasks.service';
 const DATE_PART_LENGTH = 10;
 const CALLBACK_TITLE_LENGTH = 36;
 
+export const TELEGRAM_MENU = {
+  today: '📅 План на сегодня',
+  stats: '🔥 Мои Стрики и XP',
+  help: '❓ Помощь',
+} as const;
+
+const TELEGRAM_REPLY_KEYBOARD = Markup.keyboard([
+  [
+    Markup.button.text(TELEGRAM_MENU.today),
+    Markup.button.text(TELEGRAM_MENU.stats),
+  ],
+  [Markup.button.text(TELEGRAM_MENU.help)],
+])
+  .resize()
+  .persistent();
+
 function toUtcDateKey(date = new Date()) {
   return date.toISOString().slice(0, DATE_PART_LENGTH);
 }
@@ -57,7 +73,21 @@ export class TelegramService {
     const text =
       context.message && 'text' in context.message ? context.message.text : '';
     const code = text.match(/^\/start(?:@\w+)?\s+(\d{6})\s*$/)?.[1];
-    if (!chatId || !code) {
+    if (!chatId) return;
+
+    if (!code) {
+      const linkedUser = await this.prisma.user.findUnique({
+        where: { telegramChatId: chatId },
+        select: { name: true },
+      });
+      if (linkedUser) {
+        await context.reply(
+          `С возвращением в Plann, ${linkedUser.name}! Выберите действие:`,
+          TELEGRAM_REPLY_KEYBOARD,
+        );
+        return;
+      }
+
       await context.reply(
         'Откройте ссылку из настроек Plann, чтобы привязать Telegram.',
       );
@@ -95,6 +125,7 @@ export class TelegramService {
 
     await context.reply(
       `🎉 Ваш Telegram успешно привязан к аккаунту Plann, ${user.name}!`,
+      TELEGRAM_REPLY_KEYBOARD,
     );
   }
 
@@ -104,6 +135,59 @@ export class TelegramService {
 
     const summary = await this.buildTodaySummary(linkedUser.id);
     await context.reply(summary.text, summary.keyboard);
+  }
+
+  async handleStats(context: Context) {
+    const linkedUser = await this.findLinkedUser(context);
+    if (!linkedUser) return;
+
+    const [user, habits] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: linkedUser.id },
+        select: { level: true, xp: true, globalStreak: true },
+      }),
+      this.habitsService.findAll(linkedUser.id),
+    ]);
+    if (!user) return;
+
+    const habitLines =
+      habits.length > 0
+        ? habits.map(
+            (habit) =>
+              `• ${cleanTitle(habit.title)} — 🔥 ${habit.currentStreak} дн.`,
+          )
+        : ['— Активных привычек пока нет'];
+
+    await context.reply(
+      [
+        '🔥 Ваш прогресс в Plann',
+        '',
+        `Уровень: ${user.level}`,
+        `XP: ${user.xp}`,
+        `Общая серия активности: ${user.globalStreak} дн.`,
+        '',
+        'Серии привычек:',
+        ...habitLines,
+      ].join('\n'),
+      TELEGRAM_REPLY_KEYBOARD,
+    );
+  }
+
+  async handleHelp(context: Context) {
+    const linkedUser = await this.findLinkedUser(context);
+    if (!linkedUser) return;
+
+    await context.reply(
+      [
+        '❓ Команды Plann',
+        '',
+        `${TELEGRAM_MENU.today} — задачи и привычки на сегодня`,
+        `${TELEGRAM_MENU.stats} — уровень, XP и текущие серии`,
+        `${TELEGRAM_MENU.help} — показать эту справку`,
+        '/today — открыть план на сегодня',
+      ].join('\n'),
+      TELEGRAM_REPLY_KEYBOARD,
+    );
   }
 
   async handleToggle(context: Context) {
@@ -141,7 +225,12 @@ export class TelegramService {
 
     const summary = await this.buildTodaySummary(linkedUser.id);
     await context.answerCbQuery('✅ Выполнено!');
-    await context.editMessageText(summary.text, summary.keyboard);
+    try {
+      await context.editMessageText(summary.text, summary.keyboard);
+    } catch (error) {
+      if (this.isMessageNotModifiedError(error)) return;
+      throw error;
+    }
   }
 
   @Cron('0 0 8 * * *', { timeZone: 'UTC' })
@@ -319,5 +408,17 @@ export class TelegramService {
         );
       }
     }
+  }
+
+  private isMessageNotModifiedError(error: unknown) {
+    if (typeof error !== 'object' || error === null) return false;
+    const telegramError = error as {
+      description?: unknown;
+      message?: unknown;
+    };
+    return [telegramError.description, telegramError.message].some(
+      (value) =>
+        typeof value === 'string' && value.includes('message is not modified'),
+    );
   }
 }

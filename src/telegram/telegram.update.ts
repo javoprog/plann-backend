@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Context, Telegraf } from 'telegraf';
-import { TelegramService } from './telegram.service';
+import { TELEGRAM_MENU, TelegramService } from './telegram.service';
 
 @Injectable()
 export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
@@ -32,6 +32,15 @@ export class TelegramUpdate implements OnModuleInit, OnModuleDestroy {
     this.bot.start((context) => this.telegramService.handleStart(context));
     this.bot.command('today', (context) =>
       this.telegramService.handleToday(context),
+    );
+    this.bot.hears(TELEGRAM_MENU.today, (context) =>
+      this.telegramService.handleToday(context),
+    );
+    this.bot.hears(TELEGRAM_MENU.stats, (context) =>
+      this.telegramService.handleStats(context),
+    );
+    this.bot.hears(TELEGRAM_MENU.help, (context) =>
+      this.telegramService.handleHelp(context),
     );
     this.bot.action(/^toggle_(task|habit)_.+$/, (context) =>
       this.telegramService.handleToggle(context),
