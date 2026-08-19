@@ -12,7 +12,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
 COPY prisma ./prisma/
-RUN npm ci --only=production
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 EXPOSE 4000
-CMD npx prisma db push && node dist/main.js
+CMD npx prisma db push && (node dist/main.js || node dist/src/main.js)
