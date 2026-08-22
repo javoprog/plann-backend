@@ -14,7 +14,7 @@ import {
 
 const validGoal = {
   title: 'Run a half marathon',
-  description: 'Train consistently without overloading',
+  description: 'Train consistently without overloading' as string | null,
   deadline: new Date('2026-12-01T00:00:00.000Z'),
   category: { name: 'Health' },
   user: { language: 'en' },
